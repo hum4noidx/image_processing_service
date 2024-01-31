@@ -1,9 +1,12 @@
 import logging
 
 import aiohttp
-from fastapi import APIRouter, File, UploadFile
+from fastapi import APIRouter, File, UploadFile, HTTPException
+from starlette import status
 
 from app.core.config import settings
+from app.deps.db import CurrentAsyncSession
+from app.repo.pipeline_repo import PipelineRepo
 
 logger = logging.getLogger(__name__)
 
@@ -15,8 +18,15 @@ router = APIRouter(
 
 @router.post("/")
 async def process_image(
+    pipeline_id: int,
+    current_session: CurrentAsyncSession,
     image: UploadFile = File(...),
 ):
+    pipeline_repo: PipelineRepo = PipelineRepo(current_session)
+    pipeline = await pipeline_repo.get_pipeline_by_id(pipeline_id=pipeline_id)
+    if not pipeline:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Pipeline with ID {pipeline_id} not found")
+
     data = {
         "image": await image.read(),
     }
