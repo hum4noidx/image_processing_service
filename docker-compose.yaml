@@ -1,0 +1,64 @@
+version: "3.9"
+
+services:
+  database:
+    container_name: ${POSTGRES_CONTAINER_NAME}
+    image: postgres:15-alpine
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    env_file:
+      - .env
+    healthcheck:
+      test: pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}
+      interval: 5s
+      timeout: 3s
+
+  image_processing_service:
+    container_name: ${PROCESSING_CONTAINER_NAME}
+    build:
+      context: image_process_service
+      dockerfile: Dockerfile
+    command: gunicorn main:app --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:5001
+    volumes:
+      - ./image_process_service:/app:delegated
+      - root-home:/root:delegated
+    ports:
+      - "5001:5001"
+    depends_on:
+      database:
+        condition: service_healthy
+    env_file:
+      - .env
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:5001/healthcheck" ]
+      interval: 5s
+      timeout: 5s
+  main:
+    container_name: ${BACKEND_CONTAINER_NAME}
+    build:
+      context: main_app
+      dockerfile: Dockerfile
+    command: gunicorn main:app --workers 4 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:5000
+    volumes:
+      - ./main_app:/app:delegated
+      - root-home:/root:delegated
+    ports:
+      - "5000:5000"
+    depends_on:
+      database:
+        condition: service_healthy
+      image_processing_service:
+        condition: service_healthy
+    env_file:
+      - .env
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:5000/healthcheck" ]
+      interval: 5s
+      timeout: 5s
+
+volumes:
+  db-data:
+  app-data:
+  root-home:
